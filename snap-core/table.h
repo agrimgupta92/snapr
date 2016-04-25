@@ -1,14 +1,141 @@
 #ifndef TABLE_H
 #define TABLE_H
-#include "tmetric.h"
-//#include "snap.h"
-#ifdef USE_OPENMP
-#define CHUNKS_PER_THREAD 10
-#endif
 
-/// Distance metrics for similarity joins
-// Haversine distance is used to calculate distance between two points on a sphere based on latitude and longitude
-typedef enum {L1Norm, L2Norm, Jaccard, Haversine} TSimType;
+/// Boolean operators for selection predicates
+typedef enum {NOT, AND, OR, NOP} TPredOp; 
+/// Comparison operators for selection predicates
+typedef enum {LT = 0, LTE, EQ, NEQ, GTE, GT, SUBSTR, SUPERSTR} TPredComp; 
+
+class TPredicate;
+class TAtomicPredicate;
+class TPredicateNode;
+
+//#//////////////////////////////////////////////
+/// TAtomicPredicate class - for encapsulating comparison operations
+class TAtomicPredicate {
+  private:
+    TAttrType Type; ///< Type of the predicate variables
+    TBool IsConst; ///< Flag if this atomic node represents a constant value
+    TPredComp Compare; ///< Comparison op represented by this node
+    TStr Lvar; ///< Left variable of the comparison op
+    TStr Rvar; ///< Right variable of the comparison op
+    TInt IntConst; ///< Int const value if this object is an integer constant
+    TFlt FltConst; ///< Flt const value if this object is a float constant
+    TStr StrConst; ///< Str const value if this object is a string constant
+  // OP RS: 2014/03/25, NonAtom does not work with Snap.py
+	//protected:
+		//static const TAtomicPredicate NonAtom;
+  public:
+    /// Default constructor
+    TAtomicPredicate() : Type(atInt), IsConst(true), 
+      Compare(EQ), Lvar(""), Rvar(""), 
+      IntConst(0), FltConst(0), StrConst("") {}
+    //TAtomicPredicate() : Type(NonAtom.Type), IsConst(NonAtom.IsConst), 
+    //  Compare(NonAtom.Compare), Lvar(NonAtom.Lvar), Rvar(NonAtom.Rvar), 
+    //  IntConst(NonAtom.IntConst), FltConst(NonAtom.FltConst), StrConst(NonAtom.StrConst) {}
+    /// Construct predicate from given comparison op, variables and constants
+    TAtomicPredicate(TAttrType Typ, TBool IsCnst, TPredComp Cmp, TStr L, TStr R, 
+    TInt ICnst, TFlt FCnst, TStr SCnst) : Type(Typ), IsConst(IsCnst), 
+      Compare(Cmp), Lvar(L), Rvar(R), IntConst(ICnst), FltConst(FCnst),
+      StrConst(SCnst) {}
+    /// Compact prototype for constructing non-const atomic predicate
+    TAtomicPredicate(TAttrType Typ, TBool IsCnst, TPredComp Cmp, TStr L, TStr R) :
+      Type(Typ), IsConst(IsCnst), Compare(Cmp), Lvar(L), Rvar(R), IntConst(0), 
+      FltConst(0), StrConst("") {}
+    friend class TPredicate;
+		friend class TPredicateNode;
+};
+
+//#//////////////////////////////////////////////
+/// Atomic predicate node - represents a binary predicate operation on two variables
+//#//////////////////////////////////////////////
+/// Predicate node - represents a binary predicate operation on two predicate nodes
+class TPredicateNode {
+	public:
+		TPredOp Op; ///< Logical op represented by this node
+		TBool Result; ///< Result of evaulating the predicate rooted at this node
+		TAtomicPredicate Atom; ///< Atomic predicate at this node
+		TPredicateNode* Parent; ///< Parent node of this node
+		TPredicateNode* Left; ///< Left child of this node
+		TPredicateNode* Right; ///< Right child of this node
+		/// Default constructor
+		TPredicateNode(): Op(NOP), Result(false), Atom(), Parent(NULL), Left(NULL), 
+			Right(NULL) {}
+		/// Constructor for atomic predicate node (leaf)
+		TPredicateNode(const TAtomicPredicate& A): Op(NOP), Result(false), Atom(A), 
+			Parent(NULL), Left(NULL), Right(NULL) {}
+		/// Constructor for logical operation predicate node (internal node)
+		TPredicateNode(TPredOp Opr): Op(Opr), Result(false), Atom(), Parent(NULL), 
+			Left(NULL), Right(NULL) {}
+		/// Copy constructor
+		TPredicateNode(const TPredicateNode& P): Op(P.Op), Result(P.Result), Atom(P.Atom), 
+			Parent(P.Parent), Left(P.Left), Right(P.Right) {}
+		/// Add left child to this node
+		void AddLeftChild(TPredicateNode* Child) { Left = Child; Child->Parent = this; }
+		/// Add right child to this node
+		void AddRightChild(TPredicateNode* Child) { Right = Child; Child->Parent = this; }
+		/// Get variables in the predicate tree rooted at this node
+		void GetVariables(TStrV& Variables);
+		friend class TPredicate;
+};
+
+//#//////////////////////////////////////////////
+/// TPredicate class - for encapsulating comparison operations
+class TPredicate {
+	protected:
+		THash<TStr, TInt> IntVars; ///< Int variables in the current predicate tree
+		THash<TStr, TFlt> FltVars; ///< Float variables in the current predicate tree
+		THash<TStr, TStr> StrVars; ///< String variables in the current predicate tree
+		TPredicateNode* Root; ///< Rood node of the current predicate tree
+	public:
+		/// Default constructor
+		TPredicate() : IntVars(), FltVars(), StrVars() {}
+		/// Construct predicate with given root node \c R
+		TPredicate(TPredicateNode* R) : IntVars(), FltVars(), StrVars(), Root(R) {}
+		/// Copy constructor
+		TPredicate(const TPredicate& Pred) : IntVars(Pred.IntVars), FltVars(Pred.FltVars), StrVars(Pred.StrVars), Root(Pred.Root) {}
+		/// Get variables in current predicate
+		void GetVariables(TStrV& Variables);
+		/// Set int variable value in the predicate or all the children that use it
+		void SetIntVal(TStr VarName, TInt VarVal) { IntVars.AddDat(VarName, VarVal); }
+		/// Set flt variable value in the predicate or all the children that use it
+		void SetFltVal(TStr VarName, TFlt VarVal) { FltVars.AddDat(VarName, VarVal); }
+		/// Set str variable value in the predicate or all the children that use it
+		void SetStrVal(TStr VarName, TStr VarVal) { StrVars.AddDat(VarName, VarVal); }
+		/// Return the result of evaluating current predicate
+		TBool Eval();
+		/// Evaluate the give atomic predicate
+		TBool EvalAtomicPredicate(const TAtomicPredicate& Atom);
+
+		/// Compare atomic values Val1 and Val2 using predicate Cmp
+		template <class T>
+		static TBool EvalAtom(T Val1, T Val2, TPredComp Cmp) {
+			switch (Cmp) {
+				case LT: return Val1 < Val2;
+				case LTE: return Val1 <= Val2;
+				case EQ: return Val1 == Val2;
+				case NEQ: return Val1 != Val2;
+				case GTE: return Val1 >= Val2;
+				case GT: return Val1 > Val2;
+				default: return false;
+			}
+		};
+
+		/// Compare atomic string values Val1 and Val2 using predicate Cmp
+		static TBool EvalStrAtom(const TStr& Val1, const TStr& Val2, TPredComp Cmp) {
+			switch (Cmp) {
+				case LT: return Val1 < Val2;
+				case LTE: return Val1 <= Val2;
+				case EQ: return Val1 == Val2;
+				case NEQ: return Val1 != Val2;
+				case GTE: return Val1 >= Val2;
+				case GT: return Val1 > Val2;
+				case SUBSTR: return Val2.IsStrIn(Val1);
+				case SUPERSTR: return Val1.IsStrIn(Val2);
+				default: return false;
+			}
+		}
+};
 
 //#//////////////////////////////////////////////
 /// Table class
@@ -19,18 +146,49 @@ typedef TPt<TTable> PTable;
 /// Represents grouping key with IntV for integer and string attributes and FltV for float attributes.
 typedef TPair<TIntV, TFltV> TGroupKey;
 
+/// Distance metrics for similarity joins
+// Haversine distance is used to calculate distance between two points on a sphere based on latitude and longitude
+typedef enum {L1Norm, L2Norm, Jaccard, Haversine} TSimType;
+
+#if 0
+// TMetric and TEuclideanMetric are currently not used, kept for future use
+//#//////////////////////////////////////////////
+/// Metric class: base class for distance metrics
+class TMetric {
+protected:
+  TStr MetricName; ///< Name of the metric defined by this class
+public:
+  TMetric(TStr Name) : MetricName(Name) {}
+  /// Get the name of this metric
+  TStr GetName();
+  /// Virtual base function for defining metric on floats
+  virtual TFlt NumDist(TFlt,TFlt) { return -1; }
+  /// Virtual base function for defining metric on strings
+  virtual TFlt StrDist(TStr,TStr) { return -1; }
+};
+
+//#//////////////////////////////////////////////
+/// Euclidean metric class: compute distance between two floats
+class TEuclideanMetric: public TMetric {
+public:
+  TEuclideanMetric(TStr Name) : TMetric(Name) {}
+  /// Calculate the euclidean distance of two floats
+  TFlt NumDist(TFlt x1,TFlt x2) { return fabs(x1-x2); }
+};
+#endif
+
 //TODO: move to separate file (map.h / file with PR and HITS)
 namespace TSnap {
 
   /// Gets sequence of PageRank tables from given \c GraphSeq into \c TableSeq.
   template <class PGraph>
   void MapPageRank(const TVec<PGraph>& GraphSeq, TVec<PTable>& TableSeq,
-      TTableContext& Context, const double& C, const double& Eps, const int& MaxIter);
+      TTableContext* Context, const double& C, const double& Eps, const int& MaxIter);
 
   /// Gets sequence of Hits tables from given \c GraphSeq into \c TableSeq.
   template <class PGraph>
   void MapHits(const TVec<PGraph>& GraphSeq, TVec<PTable>& TableSeq,
-    TTableContext& Context, const int& MaxIter);
+    TTableContext* Context, const int& MaxIter);
 }
 
 //#//////////////////////////////////////////////
@@ -44,8 +202,19 @@ public:
   TTableContext() {}
   /// Loads TTableContext in binary from \c SIn.
   TTableContext(TSIn& SIn): StringVals(SIn) {}
+  /// Loads TTableContext in binary from \c SIn.
+  void Load(TSIn& SIn) { StringVals.Load(SIn); }
   /// Saves TTableContext in binary to \c SOut.
   void Save(TSOut& SOut) { StringVals.Save(SOut); }
+  /// Adds string \c Key to the context, returns its KeyId.
+  TInt AddStr(const TStr& Key) {
+    TInt KeyId = TInt(StringVals.AddKey(Key));
+    return(KeyId);
+  }
+  /// Returns a string with \c KeyId.
+  TStr GetStr(const TInt& KeyId) const {
+    return StringVals.GetKey(KeyId);
+  }
 };
 
 //#//////////////////////////////////////////////
@@ -274,18 +443,27 @@ public:
 /// The name of the friend is not found by simple name lookup until a matching declaration is provided in that namespace scope (either before or after the class declaration granting friendship).
 namespace TSnap{
 	/// Converts table to a directed/undirected graph. Suitable for PUNGraph and PNGraph, but not for PNEANet where attributes are expected.
-	template<class PGraph> PGraph ToGraph(PTable Table, const TStr& SrcCol, const TStr& DstCol, TAttrAggr AggrPolicy);
+	template<class PGraph> PGraph ToGraph(PTable Table,
+    const TStr& SrcCol, const TStr& DstCol, TAttrAggr AggrPolicy);
 	/// Converts table to a network. Suitable for PNEANet - Requires node and edge attribute column names as vectors.
-	template<class PGraph> PGraph ToNetwork(PTable Table, const TStr& SrcCol, const TStr& DstCol,
-			TStrV& SrcAttrs, TStrV& DstAttrs, TStrV& EdgeAttrs, TAttrAggr AggrPolicy);
+	template<class PGraph> PGraph ToNetwork(PTable Table,
+    const TStr& SrcCol, const TStr& DstCol,
+    TStrV& SrcAttrs, TStrV& DstAttrs, TStrV& EdgeAttrs,
+    TAttrAggr AggrPolicy);
 	/// Converts table to a network. Suitable for PNEANet - Assumes no node and edge attributes.
-	template<class PGraph> PGraph ToNetwork(PTable Table, const TStr& SrcCol, const TStr& DstCol, TAttrAggr AggrPolicy);
+	template<class PGraph> PGraph ToNetwork(PTable Table,
+    const TStr& SrcCol, const TStr& DstCol, TAttrAggr AggrPolicy);
 
 #ifdef GCC_ATOMIC
-  template<class PGraphMP> PGraphMP ToGraphMP(PTable Table, const TStr& SrcCol, const TStr& DstCol);
-  template<class PGraphMP> PGraphMP ToGraphMP2(PTable Table, const TStr& SrcCol, const TStr& DstCol);
-  PNEANetMP ToTNEANetMP(PTable Table, const TStr& SrcCol, const TStr& DstCol);
-  PNEANetMP ToTNEANetMP2(PTable Table, const TStr& SrcCol, const TStr& DstCol);
+  template<class PGraphMP> PGraphMP ToGraphMP(PTable Table,
+    const TStr& SrcCol, const TStr& DstCol);
+  template<class PGraphMP> PGraphMP ToGraphMP3(PTable Table,
+    const TStr& SrcCol, const TStr& DstCol);
+  template<class PGraphMP> PGraphMP ToNetworkMP(PTable Table, const TStr& SrcCol, const TStr& DstCol,
+		  TStrV& SrcAttrs, TStrV& DstAttrs, TStrV& EdgeAttrs, TAttrAggr AggrPolicy);
+  template<class PGraphMP> PGraphMP ToNetworkMP2(PTable Table, const TStr& SrcCol, const TStr& DstCol,
+		  TStrV& SrcAttrs, TStrV& DstAttrs, TStrV& EdgeAttrs, TAttrAggr AggrPolicy);
+
 #endif // GCC_ATOMIC
 }
 
@@ -298,15 +476,18 @@ protected:
 
   static TInt UseMP; ///< Global switch for choosing multi-threaded versions of TTable functions.
 public:
-  template<class PGraph> friend PGraph TSnap::ToGraph(PTable Table, const TStr& SrcCol, const TStr& DstCol, TAttrAggr AggrPolicy);
-	template<class PGraph> friend PGraph TSnap::ToNetwork(PTable Table, const TStr& SrcCol, const TStr& DstCol,
-			TStrV& SrcAttrs, TStrV& DstAttrs, TStrV& EdgeAttrs, TAttrAggr AggrPolicy);
+  template<class PGraph> friend PGraph TSnap::ToGraph(PTable Table,
+    const TStr& SrcCol, const TStr& DstCol, TAttrAggr AggrPolicy);
+    template<class PGraph> friend PGraph TSnap::ToNetwork(PTable Table,
+    const TStr& SrcCol, const TStr& DstCol,
+    TStrV& SrcAttrs, TStrV& DstAttrs, TStrV& EdgeAttrs,
+    TAttrAggr AggrPolicy);
 
 #ifdef GCC_ATOMIC
   template<class PGraphMP> friend PGraphMP TSnap::ToGraphMP(PTable Table, const TStr& SrcCol, const TStr& DstCol);
-  template<class PGraphMP> friend PGraphMP TSnap::ToGraphMP2(PTable Table, const TStr& SrcCol, const TStr& DstCol);
-  friend PNEANetMP TSnap::ToTNEANetMP(PTable Table, const TStr& SrcCol, const TStr& DstCol);
-  friend PNEANetMP TSnap::ToTNEANetMP2(PTable Table, const TStr& SrcCol, const TStr& DstCol);
+  template<class PGraphMP> friend PGraphMP TSnap::ToGraphMP3(PTable Table, const TStr& SrcCol, const TStr& DstCol);
+  template<class PGraphMP> friend PGraphMP TSnap::ToNetworkMP(PTable Table, const TStr& SrcCol, const TStr& DstCol, TStrV& SrcAttrs, TStrV& DstAttrs, TStrV& EdgeAttrs, TAttrAggr AggrPolicy);
+  template<class PGraphMP> friend PGraphMP TSnap::ToNetworkMP2(PTable Table, const TStr& SrcCol, const TStr& DstCol,  TStrV& SrcAttrs, TStrV& DstAttrs, TStrV& EdgeAttrs, TAttrAggr AggrPolicy);
 #endif // GCC_ATOMIC
 
   static void SetMP(TInt Value) { UseMP = Value; }
@@ -328,7 +509,7 @@ public:
     return NCols;
   }
 protected:
-  TTableContext& Context;  ///< Execution Context. ##TTable::Context
+  TTableContext* Context;  ///< Execution Context. ##TTable::Context
   Schema Sch; ///< Table Schema.
   TCRef CRef;
   TInt NumRows; ///< Number of rows in the table (valid and invalid).
@@ -380,11 +561,11 @@ protected:
 /***** Utility functions for handling string values *****/
   /// Gets the Key of the Context StringVals pool. Used by ToGraph method in conv.cpp.
   const char* GetContextKey(TInt Val) const {
-	  return Context.StringVals.GetKey(Val);
+	  return Context->StringVals.GetKey(Val);
   }
   /// Gets the value in column with id \c ColIdx at row \c RowIdx.
   TStr GetStrVal(TInt ColIdx, TInt RowIdx) const {
-    return TStr(Context.StringVals.GetKey(StrColMaps[ColIdx][RowIdx]));
+    return TStr(Context->StringVals.GetKey(StrColMaps[ColIdx][RowIdx]));
   }
   /// Adds \c Val in column with id \c ColIdx.
   void AddStrVal(const TInt& ColIdx, const TStr& Val);
@@ -627,18 +808,18 @@ protected:
 public:
 /***** Constructors *****/
   TTable();
-  TTable(TTableContext& Context);
-  TTable(const Schema& S, TTableContext& Context);
-  TTable(TSIn& SIn, TTableContext& Context);
+  TTable(TTableContext* Context);
+  TTable(const Schema& S, TTableContext* Context);
+  TTable(TSIn& SIn, TTableContext* Context);
 
   /// Constructor to build table out of a hash table of int->int.
   TTable(const THash<TInt,TInt>& H, const TStr& Col1, const TStr& Col2,
-   TTableContext& Context, const TBool IsStrKeys = false);
+   TTableContext* Context, const TBool IsStrKeys = false);
   /// Constructor to build table out of a hash table of int->float.
   TTable(const THash<TInt,TFlt>& H, const TStr& Col1, const TStr& Col2,
-   TTableContext& Context, const TBool IsStrKeys = false);
+   TTableContext* Context, const TBool IsStrKeys = false);
   // TTable(const TStr& TableName, const THash<TInt,TStr>& H, const TStr& Col1,
-  //  const TStr& Col2, TTableContext& Context);
+  //  const TStr& Col2, TTableContext* Context);
 
   /// Copy constructor.
   TTable(const TTable& Table): Context(Table.Context), Sch(Table.Sch),
@@ -655,18 +836,18 @@ public:
   TTable(const TTable& Table, const TIntV& RowIds);
 
   static PTable New() { return new TTable(); }
-  static PTable New(TTableContext& Context) { return new TTable(Context); }
-  static PTable New(const Schema& S, TTableContext& Context) {
+  static PTable New(TTableContext* Context) { return new TTable(Context); }
+  static PTable New(const Schema& S, TTableContext* Context) {
     return new TTable(S, Context);
   }
   /// Returns pointer to a table constructed from given int->int hash.
   static PTable New(const THash<TInt,TInt>& H, const TStr& Col1,
-   const TStr& Col2, TTableContext& Context, const TBool IsStrKeys = false) {
+   const TStr& Col2, TTableContext* Context, const TBool IsStrKeys = false) {
     return new TTable(H, Col1, Col2, Context, IsStrKeys);
   }
   /// Returns pointer to a table constructed from given int->float hash.
   static PTable New(const THash<TInt,TFlt>& H, const TStr& Col1,
-   const TStr& Col2, TTableContext& Context, const TBool IsStrKeys = false) {
+   const TStr& Col2, TTableContext* Context, const TBool IsStrKeys = false) {
     return new TTable(H, Col1, Col2, Context, IsStrKeys);
   }
   /// Returns pointer to a new table created from given \c Table.
@@ -678,37 +859,46 @@ public:
   // }
 
 /***** Save / Load functions *****/
-  /// Loads table from spread sheet (TSV, CSV, etc).
-  static PTable LoadSS(const Schema& S, const TStr& InFNm, TTableContext& Context,
+  /// Loads table from spread sheet (TSV, CSV, etc). Note: HasTitleLine = true is not supported. Please comment title lines instead
+  static PTable LoadSS(const Schema& S, const TStr& InFNm, TTableContext* Context,
    const char& Separator = '\t', TBool HasTitleLine = false);
-  /// Loads table from spread sheet - but only load the columns specified by RelevantCols.
-  static PTable LoadSS(const Schema& S, const TStr& InFNm, TTableContext& Context,
+  /// Loads table from spread sheet - but only load the columns specified by RelevantCols. Note: HasTitleLine = true is not supported. Please comment title lines instead
+  static PTable LoadSS(const Schema& S, const TStr& InFNm, TTableContext* Context,
    const TIntV& RelevantCols, const char& Separator = '\t', TBool HasTitleLine = false);
-  /// Saves table schema + content into a TSV file.
+  /// Saves table schema and content to a TSV file.
   void SaveSS(const TStr& OutFNm);
-  /// Saves table schema + content into a binary.
+  /// Saves table schema and content to a binary file.
   void SaveBin(const TStr& OutFNm);
-  /// Loads table from binary. ##TTable::Load
-  static PTable Load(TSIn& SIn, TTableContext& Context){ return new TTable(SIn, Context);}
-  /// Saves table schema + content into binary. ##TTable::Save
+  /// Loads table from a binary format. ##TTable::Load
+  static PTable Load(TSIn& SIn, TTableContext* Context){ return new TTable(SIn, Context);}
+  /// Saves table schema and content to a binary format. ##TTable::Save
   void Save(TSOut& SOut);
+  /// Prints table contents to a text file.
+  void Dump(FILE *OutF=stdout) const;
 
   /// Builds table from hash table of int->int.
   static PTable TableFromHashMap(const THash<TInt,TInt>& H, const TStr& Col1, const TStr& Col2,
-   TTableContext& Context, const TBool IsStrKeys = false) {
+   TTableContext* Context, const TBool IsStrKeys = false) {
     PTable T = New(H, Col1, Col2, Context, IsStrKeys);
     T->InitIds();
     return T;
   }
   /// Builds table from hash table of int->float.
   static PTable TableFromHashMap(const THash<TInt,TFlt>& H, const TStr& Col1, const TStr& Col2,
-   TTableContext& Context, const TBool IsStrKeys = false) {
+   TTableContext* Context, const TBool IsStrKeys = false) {
     PTable T = New(H, Col1, Col2, Context, IsStrKeys);
     T->InitIds();
     return T;
   }
   /// Adds row with values taken from given TTableRow.
   void AddRow(const TTableRow& Row) { AddRow(Row.GetIntVals(), Row.GetFltVals(), Row.GetStrVals()); };
+
+  /// Returns the context.
+  TTableContext* GetContext() {
+    return Context;
+  }
+  /// Changes the current context. Moves all object items to the new context.
+  TTableContext* ChangeContext(TTableContext* Context);
 
 /***** Value Getters - getValue(column name, physical row Idx) *****/
   /// Gets index of column \c ColName among columns of the same type in the schema.
@@ -729,6 +919,10 @@ public:
   /// Gets the value of string attribute \c ColName at row \c RowIdx.
   TStr GetStrVal(const TStr& ColName, const TInt& RowIdx) const {
     return GetStrVal(GetColIdx(ColName), RowIdx);
+  }
+  /// Gets the string with \c KeyId.
+  TStr GetStr(const TInt& KeyId) const {
+    return Context->StringVals.GetKey(KeyId);
   }
 
 /***** Value Getters - getValue(col idx, row Idx) *****/
@@ -820,19 +1014,19 @@ public:
 	TStrV GetEdgeStrAttrV() const;
 
   /// Extracts node TTable from PNEANet.
-  static PTable GetNodeTable(const PNEANet& Network, TTableContext& Context);
+  static PTable GetNodeTable(const PNEANet& Network, TTableContext* Context);
   /// Extracts edge TTable from PNEANet.
-  static PTable GetEdgeTable(const PNEANet& Network, TTableContext& Context);
+  static PTable GetEdgeTable(const PNEANet& Network, TTableContext* Context);
 
 #ifdef USE_OPENMP
   /// Extracts edge TTable from parallel graph PNGraphMP.
-  static PTable GetEdgeTablePN(const PNGraphMP& Network, TTableContext& Context);
+  static PTable GetEdgeTablePN(const PNGraphMP& Network, TTableContext* Context);
 #endif // USE_OPENMP
 
   /// Extracts node and edge property TTables from THash.
   static PTable GetFltNodePropertyTable(const PNEANet& Network, const TIntFltH& Property,
    const TStr& NodeAttrName, const TAttrType& NodeAttrType, const TStr& PropertyAttrName,
-   TTableContext& Context);
+   TTableContext* Context);
 
 /***** Basic Getters *****/
   /// Gets type of column \c ColName.
@@ -962,13 +1156,13 @@ public:
   /// Joins table with itself, on values of \c Col.
   PTable SelfJoin(const TStr& Col) { return Join(Col, *this, Col); }
   PTable SelfSimJoin(const TStrV& Cols, const TStr& DistanceColName, const TSimType& SimType, const TFlt& Threshold) { return SimJoin(Cols, *this, Cols, DistanceColName, SimType, Threshold); }
-	/// Performs join if the distance between two rows is less than the specified threshold. Returns table with schema (GroupId1, GroupId2, Similarity). ##TTable::SimJoinPerGroup
+	/// Performs join if the distance between two rows is less than the specified threshold. ##TTable::SimJoinPerGroup
 	PTable SelfSimJoinPerGroup(const TStr& GroupAttr, const TStr& SimCol, const TStr& DistanceColName, const TSimType& SimType, const TFlt& Threshold);
 
-	/// Performs join if the distance between two rows is less than the specified threshold.  ##TTable::SimJoinPerGroup
+	/// Performs join if the distance between two rows is less than the specified threshold.
 	PTable SelfSimJoinPerGroup(const TStrV& GroupBy, const TStr& SimCol, const TStr& DistanceColName, const TSimType& SimType, const TFlt& Threshold);
 
-	/// Performs join if the distance between two rows is less than the specified threshold.  ##TTable::SimJoin
+	/// Performs join if the distance between two rows is less than the specified threshold.
 	PTable SimJoin(const TStrV& Cols1, const TTable& Table, const TStrV& Cols2, const TStr& DistanceColName, const TSimType& SimType, const TFlt& Threshold);
   /// Selects first N rows from the table.
   void SelectFirstNRows(const TInt& N);
@@ -1066,7 +1260,7 @@ public:
   /// Performs arithmetic op of column values and given \c Num
   void ColGenericOp(const TStr& Attr1, const TFlt& Num, const TStr& ResAttr, TArithOp op, const TBool floatCast);
 #ifdef USE_OPENMP
-  void ColGenericOpMP(TInt ColIdx1, TInt ColIdx2, TAttrType ArgType, TFlt Num, TArithOp op, TBool ShouldCast);
+  void ColGenericOpMP(const TInt& ColIdx1, const TInt& ColIdx2, TAttrType ArgType, const TFlt& Num, TArithOp op, TBool ShouldCast);
 #endif // USE_OPENMP
   /// Performs addition of column values and given \c Num
   void ColAdd(const TStr& Attr1, const TFlt& Num, const TStr& ResultAttrName="", const TBool floatCast=false);
@@ -1103,7 +1297,7 @@ public:
   PTable IsNextK(const TStr& OrderCol, TInt K, const TStr& GroupBy, const TStr& RankColName = "");
 
   /// Gets sequence of PageRank tables from given \c GraphSeq.
-  static TTableIterator GetMapPageRank(const TVec<PNEANet>& GraphSeq, TTableContext& Context,
+  static TTableIterator GetMapPageRank(const TVec<PNEANet>& GraphSeq, TTableContext* Context,
    const double& C = 0.85, const double& Eps = 1e-4, const int& MaxIter = 100) {
     TVec<PTable> TableSeq(GraphSeq.Len());
     TSnap::MapPageRank(GraphSeq, TableSeq, Context, C, Eps, MaxIter);
@@ -1112,7 +1306,7 @@ public:
 
   /// Gets sequence of Hits tables from given \c GraphSeq.
   static TTableIterator GetMapHitsIterator(const TVec<PNEANet>& GraphSeq,
-   TTableContext& Context, const int& MaxIter = 20) {
+   TTableContext* Context, const int& MaxIter = 20) {
     TVec<PTable> TableSeq(GraphSeq.Len());
     TSnap::MapHits(GraphSeq, TableSeq, Context, MaxIter);
     return TTableIterator(TableSeq);
@@ -1323,7 +1517,7 @@ namespace TSnap {
   /// Gets sequence of PageRank tables from given \c GraphSeq into \c TableSeq.
   template <class PGraph>
   void MapPageRank(const TVec<PGraph>& GraphSeq, TVec<PTable>& TableSeq,
-   TTableContext& Context, const double& C, const double& Eps, const int& MaxIter) {
+   TTableContext* Context, const double& C, const double& Eps, const int& MaxIter) {
     int NumGraphs = GraphSeq.Len();
     TableSeq.Reserve(NumGraphs, NumGraphs);
     // This loop is parallelizable.
@@ -1337,7 +1531,7 @@ namespace TSnap {
   /// Gets sequence of Hits tables from given \c GraphSeq into \c TableSeq.
   template <class PGraph>
   void MapHits(const TVec<PGraph>& GraphSeq, TVec<PTable>& TableSeq,
-    TTableContext& Context, const int& MaxIter) {
+    TTableContext* Context, const int& MaxIter) {
     int NumGraphs = GraphSeq.Len();
     TableSeq.Reserve(NumGraphs, NumGraphs);
     // This loop is parallelizable.

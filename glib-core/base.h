@@ -146,6 +146,7 @@
 #if defined(_OPENMP)  &&  !defined(GLib_WIN)
   // main OpenMP flag
   #define USE_OPENMP
+  #define CHUNKS_PER_THREAD 10
   #include <omp.h>
   #if defined(GLib_GCC)
     #if !defined(GLib_MACOSX)
@@ -178,7 +179,6 @@
 #include "bits.h"
 #include "hash.h"
 #include "hashmp.h"
-#include "hashgenericmp.h"
 #include "xml.h"
 
 #include "xmath.h"

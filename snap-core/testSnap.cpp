@@ -95,6 +95,7 @@ int main(int argc, char* argv[]) {
   attr.Add(0.5);
   
   printf("Testing Closeness Centrality Calculation \n");
+  
   for (TNEANet::TNodeI NI = graph->BegNI(); NI < graph->EndNI(); NI++) {
     int id = NI.GetId();
     double centr = TSnap::GetWeightedClosenessCentr(graph, id, true, attr);
@@ -111,7 +112,7 @@ int main(int argc, char* argv[]) {
     double centr = It.GetDat();
     printf("NodeId: %d, Centr: %f \n", node_id, centr);
   }
-
+  
   PNGraph G= TSnap::LoadEdgeList<PNGraph>("../../cs399/soc-LiveJournal1.txt", 0, 1);
 
   // clock_t t1,t2;
