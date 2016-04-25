@@ -818,7 +818,7 @@ double GetWeightedClosenessCentr(const PNEANet Graph, const int& NId, const bool
   return 0.0;
 }
 
-void GetWeightedBetweennessCentr(const PNEANet Graph, const TIntV& BtwNIdV, TIntFltH& NodeBtwH, const bool& isDir, const bool& DoNodeCent, TIntPrFltH& EdgeBtwH, const bool& DoEdgeCent, const TFltV& Attr) {
+void GetWeightedBetweennessCentr(const PNEANet Graph, const TIntV& BtwNIdV, TIntFltH& NodeBtwH, const bool& IsDir, const bool& DoNodeCent, TIntPrFltH& EdgeBtwH, const bool& DoEdgeCent, const TFltV& Attr) {
   if (DoNodeCent) { NodeBtwH.Clr(); }
   if (DoEdgeCent) { EdgeBtwH.Clr(); }
   const int nodes = Graph->GetNodes();
@@ -889,25 +889,25 @@ void GetWeightedBetweennessCentr(const PNEANet Graph, const TIntV& BtwNIdV, TInt
         if (DoEdgeCent) {
           EdgeBtwH.AddDat(TIntPr(TMath::Mn(nid, w), TMath::Mx(nid, w))) += c; }
       }
-      double factor = (isDir) ? 1.0 : 2.0;
+      double factor = (IsDir) ? 1.0 : 2.0;
       if (DoNodeCent && w != NI.GetId()) {
         NodeBtwH.AddDat(w) += delta.GetDat(w)/factor; }
     }
   }
 }
 
-void GetWeightedBetweennessCentr(const PNEANet Graph, TIntFltH& NodeBtwH, TIntPrFltH& EdgeBtwH, const TFltV& Attr, const bool& isDir, const double& NodeFrac) {
+void GetWeightedBetweennessCentr(const PNEANet Graph, TIntFltH& NodeBtwH, TIntPrFltH& EdgeBtwH, const TFltV& Attr, const bool& IsDir, const double& NodeFrac) {
   TIntV NIdV;  Graph->GetNIdV(NIdV);
   if (NodeFrac < 1.0) { // calculate beetweenness centrality for a subset of nodes
     NIdV.Shuffle(TInt::Rnd);
     for (int i = int((1.0-NodeFrac)*NIdV.Len()); i > 0; i--) {
       NIdV.DelLast(); }
   }
-  GetWeightedBetweennessCentr(Graph, NIdV, NodeBtwH, isDir, true, EdgeBtwH, true, Attr
+  GetWeightedBetweennessCentr(Graph, NIdV, NodeBtwH, IsDir, true, EdgeBtwH, true, Attr
     );
 }
 
-void GetWeightedBetweennessCentr(const PNEANet Graph, TIntFltH& NodeBtwH, const TFltV& Attr, const bool& isDir, const double& NodeFrac) {
+void GetWeightedBetweennessCentr(const PNEANet Graph, TIntFltH& NodeBtwH, const TFltV& Attr, const bool& IsDir, const double& NodeFrac) {
   TIntPrFltH EdgeBtwH;
   TIntV NIdV;  Graph->GetNIdV(NIdV);
   if (NodeFrac < 1.0) { // calculate beetweenness centrality for a subset of nodes
@@ -915,10 +915,10 @@ void GetWeightedBetweennessCentr(const PNEANet Graph, TIntFltH& NodeBtwH, const 
     for (int i = int((1.0-NodeFrac)*NIdV.Len()); i > 0; i--) {
       NIdV.DelLast(); }
   }
-  GetWeightedBetweennessCentr(Graph, NIdV, NodeBtwH, isDir, true, EdgeBtwH, false, Attr);
+  GetWeightedBetweennessCentr(Graph, NIdV, NodeBtwH, IsDir, true, EdgeBtwH, false, Attr);
 }
 
-void GetWeightedBetweennessCentr(const PNEANet Graph, TIntPrFltH& EdgeBtwH, const TFltV& Attr, const bool& isDir, const double& NodeFrac) {
+void GetWeightedBetweennessCentr(const PNEANet Graph, TIntPrFltH& EdgeBtwH, const TFltV& Attr, const bool& IsDir, const double& NodeFrac) {
   TIntFltH NodeBtwH;
   TIntV NIdV;  Graph->GetNIdV(NIdV);
   if (NodeFrac < 1.0) { // calculate beetweenness centrality for a subset of nodes
@@ -926,7 +926,7 @@ void GetWeightedBetweennessCentr(const PNEANet Graph, TIntPrFltH& EdgeBtwH, cons
     for (int i = int((1.0-NodeFrac)*NIdV.Len()); i > 0; i--) {
       NIdV.DelLast(); }
   }
-  GetWeightedBetweennessCentr(Graph, NIdV, NodeBtwH, isDir, false, EdgeBtwH, true, Attr);
+  GetWeightedBetweennessCentr(Graph, NIdV, NodeBtwH, IsDir, false, EdgeBtwH, true, Attr);
 }
 
 }; // namespace TSnap
