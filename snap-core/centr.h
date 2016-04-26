@@ -424,11 +424,11 @@ void GetBetweennessCentr(const PGraph& Graph, const TIntV& BtwNIdV, TIntFltH& No
       const TIntV NIdV = P.GetDat(w);
       S.Pop();
       for (int i = 0; i < NIdV.Len(); i++) {
-        const int nid = NIdV[i];
-        const double c = (sigma.GetDat(nid)*1.0/SigmaW) * (1+DeltaW);
-        delta.AddDat(nid) += c;
+        const int NId = NIdV[i];
+        const double c = (sigma.GetDat(NId)*1.0/SigmaW) * (1+DeltaW);
+        delta.AddDat(NId) += c;
         if (DoEdgeCent) {
-          EdgeBtwH.AddDat(TIntPr(TMath::Mn(nid, w), TMath::Mx(nid, w))) += c; }
+          EdgeBtwH.AddDat(TIntPr(TMath::Mn(NId, w), TMath::Mx(NId, w))) += c; }
       }
       double factor = (IsDir) ? 1.0 : 2.0;
       if (DoNodeCent && w != NI.GetId()) {
